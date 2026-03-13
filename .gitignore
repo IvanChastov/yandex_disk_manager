@@ -1,0 +1,46 @@
+# Виртуальное окружение
+venv/
+env/
+ENV/
+.virtualenv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+
+# Django
+db.sqlite3
+*.sqlite3
+*.db
+migrations/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Проект
+*.log
+*.pot
+*.pyc
+.DS_Store
+.coverage
+.coverage.*
+*.secret
+*.key
+
+# Токены и конфиденциальные данные
+.env
+*.token
+yandex_credentials.json
+
+# Дистрибутивы
+dist/
+build/
+*.egg-info/
