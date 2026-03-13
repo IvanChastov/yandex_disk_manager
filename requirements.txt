@@ -1,0 +1,8 @@
+Django==4.2.7
+djangorestframework==3.14.0
+yadisk==3.4.0
+schedule==1.2.0
+Pillow==10.1.0
+python-dateutil==2.8.2
+requests==2.31.0
+win10toast==0.9
