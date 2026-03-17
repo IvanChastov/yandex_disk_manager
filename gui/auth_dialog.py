@@ -9,7 +9,13 @@ import os
 # Добавляем путь к проекту, чтобы импортировать модули
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Настраиваем Django до импорта моделей
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+django.setup()
+
 from core.yandex.auth import get_auth_url, get_token_by_code_detailed, test_token
+from core.yandex.storage import save_token_to_user, get_current_user
 
 
 class AuthDialog:
@@ -211,6 +217,16 @@ class AuthDialog:
                         f"Срок действия: {expires} секунд\n\n"
                         f"Токен: {self.token[:20]}...\n\n"
                         f"Теперь можно работать с диском.")
+
+                    # Сохраняем токен в базу данных
+                    current_user = get_current_user()
+                    if current_user:
+                        if save_token_to_user(current_user, self.token):
+                            self.status_var.set("Токен сохранён в базе данных")
+                        else:
+                            self.status_var.set("Токен получен, но не сохранён")
+                    else:
+                        self.status_var.set("Пользователь не найден, токен не сохранён")
 
                     # Закрываем диалог
                     self.dialog.after(1000, self.on_success)
