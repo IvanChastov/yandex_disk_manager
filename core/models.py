@@ -40,7 +40,7 @@ class User(AbstractUser):
         related_name='core_user_set',  # Уникальное имя для обратной связи
         related_query_name='core_user',
     )
-    
+
     user_permissions = models.ManyToManyField(
         'auth.Permission',
         verbose_name='user permissions',
@@ -132,11 +132,14 @@ class File(models.Model):
     mime_type = models.CharField(
         max_length=100,
         blank=True,
+        null=True,
         verbose_name='MIME-тип'
     )
 
     size = models.BigIntegerField(
         default=0,
+        blank=True,
+        null=True,
         verbose_name='Размер (байт)'
     )
 
