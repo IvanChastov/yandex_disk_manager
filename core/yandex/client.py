@@ -87,31 +87,22 @@ class YandexDiskClient:
             return False
 
     def upload_file(self, local_path, remote_path):
-        """
-        Загружает файл на диск
-
-        Args:
-            local_path (str): Локальный путь к файлу на компьютере
-            remote_path (str): Путь для сохранения на диске
-
-        Returns:
-            bool: True если упешно, False если ошибка
-        """
+        """Загружает файл на диск"""
         try:
             self.client.upload(local_path, remote_path)
-            print(f"Файл загружен: {local_path} -> {remote_path}")
-
+            print(f"✅ Файл загружен: {local_path} -> {remote_path}")
+            
             # Получаем информацию о загруженном файле и записываем изменение
             file_info = self.get_file_info(remote_path)
             if file_info:
-                # Синхронизируем с БД
                 file_obj = self.sync_file_to_db(file_info)
                 if file_obj:
                     self.record_change(file_obj, 'created')
-
+                    print("DEBUG: Изменение записано в БД (upload)")
+            
             return True
         except Exception as e:
-            print(f"Ошибка загрузки: {e}")
+            print(f"❌ Ошибка загрузки: {e}")
             return False
 
     def create_folder(self, path):
@@ -135,27 +126,42 @@ class YandexDiskClient:
             return False
 
     def delete_file(self, path):
-        """
-        Удаляет файл или папку
-        """
+        """Удаляет файл или папку"""
         try:
-            # Сначала получаем информацию о файле, чтобы потом записать в лог
+            # Сначала получаем информацию о файле
             file_info = self.get_file_info(path)
             if file_info:
-                # Ищем в БД
-                from core.models import File
+                from core.models import File, ChangeLog
+                
                 try:
-                    file_obj = File.objects.get(
-                        yandex_id=file_info.resource_id
-                        )
+                    file_obj = File.objects.get(yandex_id=file_info.resource_id)
+                    
+                    # Записываем изменение
                     self.record_change(file_obj, 'deleted', old_path=path)
+                    print(f"DEBUG: Запись deleted создана для {file_obj.name}")
+                    
+                    # Проверяем, что запись действительно создалась
+                    last_change = ChangeLog.objects.filter(
+                        file=file_obj,
+                        change_type='deleted'
+                    ).order_by('-changed_at').first()
+                    
+                    if last_change:
+                        print(f"DEBUG: Подтверждение - запись deleted в БД (id={last_change.id})")
+                    else:
+                        print("DEBUG: ВНИМАНИЕ! Запись deleted НЕ найдена в БД!")
+                    
+                    # Удаляем файл из БД
                     file_obj.delete()
+                    
                 except File.DoesNotExist:
-                    pass
-
+                    print(f"DEBUG: Файл не найден в БД для удаления: {path}")
+            
+            # Удаляем файл с диска
             self.client.remove(path)
             print(f"Удалено: {path}")
             return True
+            
         except Exception as e:
             print(f"Ошибка удаления: {e}")
             return False
@@ -170,7 +176,7 @@ class YandexDiskClient:
             File: Объект модели File
         """
         try:
-            file_obj, created = File.objects.update_or_created(
+            file_obj, created = File.objects.update_or_create(
                 yandex_id=file_info.resource_id,
                 defaults={
                     'name': file_info.name,
@@ -192,27 +198,16 @@ class YandexDiskClient:
             return None
 
     def record_change(self, file_obj, change_type, old_path=''):
-        """
-        Записывает изменение, сделанное через наше приложение
-
-        Args:
-            file_obj (File): Объект файла
-            change_type (str): Тип изменения (
-            'created', 'modified', 'moved', 'deleted'
-            )
-            old_path (str): Старый путь (для перемещений)
-        """
-        from core.models import ChangeLog
+        """Записывает изменение, сделанное через наше приложение"""
+        from core.models import ChangeLog, User
         from django.utils import timezone
-        from core.models import User
-
-        # Получаем текущего пользователя из БД
+        
         try:
             user = User.objects.get(username=self.username)
         except User.DoesNotExist:
             user = None
-
-        ChangeLog.objects.create(
+        
+        log = ChangeLog.objects.create(
             file=file_obj,
             file_path=file_obj.path,
             change_type=change_type,
@@ -221,8 +216,5 @@ class YandexDiskClient:
             changed_at=timezone.now(),
             old_path=old_path
         )
-
-        print(
-            f"Записано изменение от приложения" 
-            f"({change_type}) для {file_obj.name}"
-            )
+        print(f"DEBUG: Записано изменение в ChangeLog (id={log.id}, type={change_type}) для {file_obj.name}")
+        return log.id

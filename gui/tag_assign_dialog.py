@@ -29,32 +29,23 @@ class TagAssignDialog:
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
-        # Создаём все элементы
         self.create_widgets()
-        
-        # Центрируем
         self.center_window()
     
     def create_widgets(self):
-        # Основной фрейм
         main = ttk.Frame(self.dialog, padding="15")
         main.pack(fill=tk.BOTH, expand=True)
         
-        # Заголовок
         ttk.Label(main, text="Выберите теги для файла:", font=('Arial', 10, 'bold')).pack(anchor=tk.W)
         
-        # Имя файла
         file_name = self.file_path.split('/')[-1]
         ttk.Label(main, text=file_name, foreground="blue").pack(anchor=tk.W, pady=5)
         
-        # Кнопка создания тега
         ttk.Button(main, text="+ Создать новый тег", command=self.add_tag).pack(anchor=tk.W, pady=10)
         
-        # Рамка для списка
         frame = ttk.LabelFrame(main, text="Доступные теги", padding=5)
         frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
-        # Список
         self.listbox = tk.Listbox(frame, selectmode=tk.MULTIPLE, height=12, font=('Arial', 10))
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.listbox.yview)
         self.listbox.configure(yscrollcommand=scrollbar.set)
@@ -62,10 +53,8 @@ class TagAssignDialog:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Загружаем теги
         self.load_tags()
         
-        # Кнопки
         btn_frame = ttk.Frame(main)
         btn_frame.pack(fill=tk.X, pady=10)
         

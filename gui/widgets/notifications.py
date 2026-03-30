@@ -153,14 +153,26 @@ class NotificationsWidget(ttk.Frame):
             self.tree.delete(self.tree.get_children()[-1])
 
     def refresh(self):
-        """Обновляет список уведомлений"""
+        """Обновляет список уведомлений из БД"""
+        from core.models import ChangeLog
+        
+        print("DEBUG: refresh() вызван в notifications")
+        
         # Очищаем список
         for item in self.tree.get_children():
             self.tree.delete(item)
-
-        # Получаем последние 50 изменений
-        recent = ChangeLog.objects.all().order_by('-changed_at')[:50]
-
+        
+        self.notifications = []
+        
+        # Получаем последние 100 изменений (включая те, у которых file=NULL)
+        recent = ChangeLog.objects.all().order_by('-changed_at')[:100]
+        print(f"DEBUG: Найдено изменений в БД: {recent.count()}")
+        
+        # Выводим все типы изменений
+        for change in recent:
+            file_name = change.file_path.split('/')[-1] if change.file_path else "Неизвестно"
+            print(f"DEBUG: {change.change_type} - {file_name} (id={change.id}, file_id={change.file})")
+        
         for change in recent:
             self._add_notification(change)
             if change.id not in self.notifications:

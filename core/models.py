@@ -211,7 +211,7 @@ class ChangeLog(models.Model):
 
     file = models.ForeignKey(
         File,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         verbose_name='Файл'
