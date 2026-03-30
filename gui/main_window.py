@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import sys
 import os
 import threading
+import django.utils.timezone
 
 # Добавляем путь к проекту
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,10 +17,15 @@ from core.yandex.client import YandexDiskClient
 from core.yandex.storage import get_current_user, get_token_for_user
 from core.yandex.monitor import DiskMonitor
 from core.models import File, ChangeLog, Tag
+from core.permissions import has_permission
 from gui.auth_dialog import AuthDialog
 from gui.widgets.file_list import FileListWidget
 from gui.widgets.tag_panel import TagPanel
 from gui.widgets.notifications import NotificationsWidget
+from gui.tag_assign_dialog import TagAssignDialog
+from gui.tag_assign_dialog import TagAssignDialog
+from core.models import Tag, File
+
 
 
 class MainWindow:
@@ -103,47 +109,50 @@ class MainWindow:
         # Создаём PanedWindow для разделения панелей
         self.main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
+        
         # Левая панель (теги)
         left_frame = ttk.Frame(self.main_paned, relief=tk.SUNKEN, borderwidth=1)
         left_frame.pack_propagate(False)
-        left_frame.configure(width=200)
-
+        left_frame.configure(width=200, height=500)
+        
         left_title = ttk.Label(left_frame, text="Теги", font=('Arial', 10, 'bold'))
         left_title.pack(pady=5)
-
+        
         self.tag_panel = TagPanel(left_frame)
+        self.tag_panel.set_main_window(self)
         self.tag_panel.pack(fill=tk.BOTH, expand=True)
         self.main_paned.add(left_frame, weight=1)
-
+        
         # Центральная панель (список файлов)
         center_frame = ttk.Frame(self.main_paned, relief=tk.SUNKEN, borderwidth=1)
         center_frame.pack_propagate(False)
-
+        
         center_title = ttk.Label(center_frame, text="Файлы и папки", font=('Arial', 10, 'bold'))
         center_title.pack(pady=5)
-
+        
         self.file_list = FileListWidget(center_frame)
         self.file_list.pack(fill=tk.BOTH, expand=True)
         self.main_paned.add(center_frame, weight=3)
-
+        
         # Правая панель (история изменений)
         right_frame = ttk.Frame(self.main_paned, relief=tk.SUNKEN, borderwidth=1)
         right_frame.pack_propagate(False)
         right_frame.configure(width=280)
-
+        
         right_title = ttk.Label(right_frame, text="История изменений", font=('Arial', 10, 'bold'))
         right_title.pack(pady=5)
-
+        
         self.notifications = NotificationsWidget(right_frame)
         self.notifications.pack(fill=tk.BOTH, expand=True)
         self.main_paned.add(right_frame, weight=1)
-
+        
         # Привязываем обработчики
         self.file_list.bind_double_click(self.on_file_double_click)
         self.file_list.bind_folder_change(self.on_folder_change)
-
-        # Обновляем геометрию (без paneconfig)
+        self.file_list.bind_assign_tags(self.on_assign_tags)
+        self.file_list.bind_delete(self.on_delete_file)
+        
+        # Обновляем геометрию
         self.root.update_idletasks()
 
     def create_status_bar(self):
@@ -177,6 +186,16 @@ class MainWindow:
             self.status_var.set(
                 "Пользователь не найден. Создайте пользователя в админке"
                 )
+            
+    def show_auth_dialog(self):
+        """Показывает диалог авторизации"""
+        from gui.auth_dialog import AuthDialog
+        
+        dialog = AuthDialog(self.root)
+        token = dialog.run()
+
+        if token:
+            self.init_client(token)
 
     def init_client(self, token):
         """Инициализирует клиент и загружает данные"""
@@ -218,17 +237,21 @@ class MainWindow:
         try:
             files = self.client.get_files_list(self.current_path)
             self.file_list.update_files(files)
+            
+            # Обновляем теги из БД
+            self.file_list.update_tags_from_db()
+            
             self.status_var.set(f"Загружено {len(files)} элементов")
         except Exception as e:
             self.status_var.set(f"Ошибка загрузки: {e}")
 
-    def show_auth_dialog(self):
-        """Показывает диалог авторизации"""
-        dialog = AuthDialog(self.root)
-        token = dialog.run()
+        def show_auth_dialog(self):
+            """Показывает диалог авторизации"""
+            dialog = AuthDialog(self.root)
+            token = dialog.run()
 
-        if token:
-            self.init_client(token)
+            if token:
+                self.init_client(token)
 
     def upload_file(self):
         """Загружает файл на диск"""
@@ -357,6 +380,72 @@ class MainWindow:
 
         if messagebox.askokcancel("Выход", "Закрыть приложение?"):
             self.root.destroy()
+
+    def on_assign_tags(self, file_item):
+        """Назначает теги файлу"""
+        
+        file_path = file_item.get('path')
+        file_name = file_item.get('name')
+        
+        # Получаем текущие теги файла из БД
+        try:
+            file_obj = File.objects.get(path=file_path)
+            current_tags = [tag.name for tag in file_obj.tags.all()]
+        except File.DoesNotExist:
+            # Создаём запись о файле, если её нет
+            file_obj = File.objects.create(
+                yandex_id=file_item.get('resource_id', ''),
+                name=file_name,
+                path=file_path,
+                type=file_item.get('type', 'file'),
+                size=file_item.get('size', 0),
+                created_at=django.utils.timezone.now(),
+                modified_at=django.utils.timezone.now(),
+            )
+            current_tags = []
+        
+        # Показываем диалог
+        dialog = TagAssignDialog(self.root, file_path, current_tags)
+        selected_tags = dialog.run()
+        
+        if selected_tags is not None:
+            # Обновляем теги в БД
+            file_obj.tags.clear()
+            for tag_name in selected_tags:
+                try:
+                    tag = Tag.objects.get(name=tag_name)
+                    file_obj.tags.add(tag)
+                except Tag.DoesNotExist:
+                    pass
+            
+            # Обновляем отображение
+            self.file_list.update_tags_from_db()
+            self.status_var.set(f"Теги для {file_name} обновлены")
+
+    def on_delete_file(self, file_item):
+        """Удаляет файл с диска"""
+        from tkinter import messagebox
+        
+        file_name = file_item.get('name')
+        remote_path = file_item.get('path')
+        
+        if not messagebox.askyesno("Подтверждение", f"Удалить файл '{file_name}'?"):
+            return
+        
+        if not self.client:
+            self.status_var.set("Клиент не инициализирован")
+            return
+        
+        self.status_var.set(f"Удаление {file_name}...")
+        self.root.update()
+        
+        success = self.client.delete_file(remote_path)
+        
+        if success:
+            self.status_var.set(f"Файл {file_name} удалён")
+            self.refresh_files()
+        else:
+            self.status_var.set(f"Ошибка удаления {file_name}")
 
     def run(self):
         """Запускает главный цикл приложения"""
