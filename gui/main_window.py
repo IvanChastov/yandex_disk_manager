@@ -8,11 +8,11 @@ import threading
 try:
     from ttkthemes import ThemedTk
     USE_THEMES = True
+    print("DEBUG: ttkthemes успешно импортирован")
 except ImportError:
     USE_THEMES = False
-    print("Для улучшенного интерфейса установите: pip install ttkthemes")
-    # Если не установлено, используем обычный Tk
-    from tkinter import Tk as ThemedTk
+    print("DEBUG: ttkthemes НЕ установлен, используется стандартный Tk")
+    from tkinter import Tk
 
 # Добавляем путь к проекту
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -40,13 +40,23 @@ class MainWindow:
     def __init__(self):
         # Создаём окно с темой
         if USE_THEMES:
-            self.root = ThemedTk(theme="radiance")  # Доступные темы: arc, breeze, equilux, plastik, radiance, ubuntu
+            self.root = ThemedTk(theme="radiance")
+            print(f"DEBUG: Создано окно ThemedTk с темой radiance")
         else:
-            self.root = ThemedTk()
+            self.root = Tk()
+            print(f"DEBUG: Создано обычное окно Tk")
         
         self.root.title("Менеджер Яндекс.Диска")
         self.root.geometry("1300x750")
         self.root.minsize(900, 600)
+        
+        print(f"DEBUG: USE_THEMES = {USE_THEMES}")
+        print(f"DEBUG: Тип self.root = {type(self.root)}")
+        if USE_THEMES:
+            try:
+                print(f"DEBUG: Текущая тема: {self.root.get_theme()}")
+            except Exception as e:
+                print(f"DEBUG: Ошибка получения темы: {e}")
         
         # Настраиваем стили
         self.setup_styles()
@@ -72,6 +82,10 @@ class MainWindow:
 
         self.original_files = []  # Для хранения оригинального списка файлов
 
+        saved_settings = self.load_settings_from_file()
+        if saved_settings:
+            self.apply_settings(saved_settings)
+
         # Настраиваем закрытие
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
     
@@ -79,7 +93,10 @@ class MainWindow:
         """Настраивает стили для всего приложения"""
         style = ttk.Style()
         
-        # Настройка Treeview (увеличиваем высоту строк)
+        # Сбрасываем старые настройки
+        style.theme_use(style.theme_use())
+        
+        # Настройка Treeview
         style.configure('Treeview', rowheight=28)
         style.configure('Treeview.Heading', font=('Segoe UI', 9, 'bold'))
         
@@ -89,15 +106,11 @@ class MainWindow:
         # Настройка заголовков
         style.configure('Title.TLabel', font=('Segoe UI', 10, 'bold'))
         
-        # Если используется ThemedTk, можно дополнительно настроить
-        if USE_THEMES:
-            try:
-                current_theme = self.root.get_theme()
-                if current_theme == "equilux":
-                    # Дополнительные настройки для темной темы
-                    style.configure('Status.TLabel', font=('Segoe UI', 9), foreground='#aaaaaa')
-            except:
-                pass
+        # Настройка строки состояния
+        style.configure('Status.TLabel', font=('Segoe UI', 9), foreground='gray')
+        
+        # Принудительно обновляем отображение всех виджетов
+        self.root.update_idletasks()
 
     def create_menu(self):
         """Создаёт главное меню"""
@@ -105,7 +118,9 @@ class MainWindow:
         
         # Меню "Файл"
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Авторизация", command=self.show_auth_dialog, accelerator="")
+        file_menu.add_command(label="Авторизация", command=self.show_auth_dialog)
+        file_menu.add_separator()
+        file_menu.add_command(label="Настройки", command=self.show_settings)
         file_menu.add_separator()
         file_menu.add_command(label="Выход", command=self.on_closing, accelerator="Ctrl+Q")
         menubar.add_cascade(label="Файл", menu=file_menu)
@@ -113,9 +128,9 @@ class MainWindow:
         # Меню "Диск"
         disk_menu = tk.Menu(menubar, tearoff=0)
         disk_menu.add_command(label="Обновить", command=self.refresh_files, accelerator="F5")
-        disk_menu.add_command(label="Загрузить файл", command=self.upload_file, accelerator="")
+        disk_menu.add_command(label="Загрузить файл", command=self.upload_file)
         disk_menu.add_separator()
-        disk_menu.add_command(label="Создать папку", command=self.create_folder, accelerator="")
+        disk_menu.add_command(label="Создать папку", command=self.create_folder)
         menubar.add_cascade(label="Диск", menu=disk_menu)
 
         # Меню "Вид"
@@ -200,7 +215,7 @@ class MainWindow:
         ttk.Label(search_frame, text="Поиск:", width=6).pack(side=tk.LEFT)
 
         self.search_var = tk.StringVar()
-        self.search_var.trace('w', lambda *args: self.on_search())  # Вызываем при каждом изменении
+        self.search_var.trace('w', lambda *args: self.on_search())
 
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
@@ -273,7 +288,7 @@ class MainWindow:
         
         # Индикатор подключения
         self.connection_var = tk.StringVar()
-        self.connection_var.set("● Не подключено")
+        self.connection_var.set("Не подключено")
         
         connection_label = ttk.Label(
             status_bar,
@@ -282,7 +297,7 @@ class MainWindow:
         )
         connection_label.pack(side=tk.RIGHT)
         
-        # Подсказка о горячих клавишах (справа)
+        # Подсказка о горячих клавишах
         hint_label = ttk.Label(
             status_bar,
             text="F5: обновить | Ctrl+F: поиск | Ctrl+D: скачать | Del: удалить",
@@ -298,28 +313,27 @@ class MainWindow:
             self.current_user = username
             self.status_var.set(f"Пользователь: {username}")
 
-            # Проверяем наличие токена
             token = get_token_for_user(username)
             if token:
                 self.init_client(token)
             else:
                 self.status_var.set("Нет токена. Нажмите Файл -> Авторизация")
-                self.connection_var.set("● Не авторизован")
+                self.connection_var.set("Не авторизован")
         else:
             self.status_var.set("Пользователь не найден. Создайте пользователя в админке")
-            self.connection_var.set("● Ошибка")
+            self.connection_var.set("Ошибка")
 
     def init_client(self, token):
         """Инициализирует клиент и загружает данные"""
         try:
             self.client = YandexDiskClient(token=token, username=self.current_user)
             self.status_var.set("Подключено к Яндекс.Диску")
-            self.connection_var.set("● Подключено")
+            self.connection_var.set("Подключено")
             self.refresh_files()
             self.start_monitor()
         except Exception as e:
             self.status_var.set(f"Ошибка подключения: {e}")
-            self.connection_var.set("● Ошибка")
+            self.connection_var.set("Ошибка")
 
     def show_auth_dialog(self):
         """Показывает диалог авторизации"""
@@ -338,7 +352,7 @@ class MainWindow:
             self.monitor = DiskMonitor(
                 username=self.current_user,
                 check_interval=300,
-                on_change_callback=self.on_monitor_change  # Добавляем коллбэк
+                on_change_callback=self.on_monitor_change
             )
             self.monitor.start()
             print("Мониторинг запущен")
@@ -347,9 +361,7 @@ class MainWindow:
 
     def on_monitor_change(self):
         """Вызывается при обнаружении изменений мониторингом"""
-        # Обновляем ленту изменений в GUI
         self.notifications.refresh()
-        # Обновляем список файлов (если нужно)
         self.refresh_files()
 
     def refresh_files(self):
@@ -366,10 +378,7 @@ class MainWindow:
         try:
             self.original_files = self.client.get_files_list(self.current_path)
             self.file_list.update_files(self.original_files)
-            
-            # Обновляем теги из БД
             self.file_list.update_tags_from_db()
-            
             self.status_var.set(f"Загружено {len(self.original_files)} элементов")
         except Exception as e:
             self.status_var.set(f"Ошибка загрузки: {e}")
@@ -395,17 +404,6 @@ class MainWindow:
         if success:
             self.status_var.set(f"Файл {file_name} загружен")
             self.refresh_files()
-            print("DEBUG: Вызываем notifications.refresh() из upload_file")
-            self.notifications.refresh()
-            
-            # Проверяем, что запись появилась в ChangeLog
-            from core.models import ChangeLog
-            latest = ChangeLog.objects.all().order_by('-changed_at')[:1]
-            if latest:
-                print(f"DEBUG: Последнее изменение: {latest[0].change_type} - {latest[0].file_path}")
-            else:
-                print("DEBUG: Нет записей в ChangeLog")
-            
             self.notifications.refresh()
         else:
             self.status_var.set(f"Ошибка загрузки {file_name}")
@@ -441,7 +439,6 @@ class MainWindow:
     def on_file_double_click(self, item):
         """Обработка двойного клика по файлу/папке"""
         if item.get('type') == 'dir':
-            # Сохраняем текущий путь в историю
             self.navigation_history.append(self.current_path)
             self.current_path = item.get('path')
             self.update_path_display()
@@ -450,7 +447,7 @@ class MainWindow:
             self.download_file(item)
 
     def on_folder_change(self, path):
-        """Обработка смены папки (например, из списка)"""
+        """Обработка смены папки"""
         self.navigation_history.append(self.current_path)
         self.current_path = path
         self.update_path_display()
@@ -489,7 +486,6 @@ class MainWindow:
         file_path = file_item.get('path')
         file_name = file_item.get('name')
         
-        # Получаем текущие теги файла из БД
         try:
             file_obj = File.objects.get(path=file_path)
             current_tags = [tag.name for tag in file_obj.tags.all()]
@@ -506,7 +502,6 @@ class MainWindow:
             )
             current_tags = []
 
-        # Показываем диалог
         dialog = TagAssignDialog(self.root, file_path, current_tags)
         selected_tags = dialog.run()
         
@@ -520,7 +515,7 @@ class MainWindow:
                     pass
             
             self.file_list.update_tags_from_db()
-            self.notifications.refresh()  # Обновляем ленту после изменения тегов
+            self.notifications.refresh()
             self.status_var.set(f"Теги для {file_name} обновлены")
 
     def on_delete_file(self, file_item):
@@ -543,7 +538,6 @@ class MainWindow:
         if success:
             self.status_var.set(f"Файл {file_name} удалён")
             self.refresh_files()
-            print("DEBUG: Вызываем notifications.refresh() из on_delete_file")
             self.notifications.refresh()
         else:
             self.status_var.set(f"Ошибка удаления {file_name}")
@@ -551,7 +545,6 @@ class MainWindow:
     def go_back(self):
         """Возвращает на предыдущую папку"""
         if self.navigation_history:
-            # Берём последний путь из истории
             previous_path = self.navigation_history.pop()
             self.current_path = previous_path
             self.update_path_display()
@@ -561,7 +554,6 @@ class MainWindow:
             
     def update_path_display(self):
         """Обновляет отображение текущего пути"""
-        # Преобразуем путь в читаемый вид
         display_path = self.current_path
         if display_path.startswith('disk:'):
             display_path = display_path[5:] or '/'
@@ -570,15 +562,12 @@ class MainWindow:
         self.path_var.set(display_path)
 
     def toggle_tags_panel(self):
-        """Показывает/скрывает панель тегов"""
         pass
 
     def toggle_history_panel(self):
-        """Показывает/скрывает панель истории"""
         pass
 
     def show_about(self):
-        """Показывает информацию о программе"""
         messagebox.showinfo(
             "О программе",
             "Менеджер Яндекс.Диска\n"
@@ -607,11 +596,9 @@ class MainWindow:
             for f in self.original_files:
                 match = False
                 
-                # Поиск по имени
                 if self.search_name_var.get() and query.lower() in f.name.lower():
                     match = True
                 
-                # Поиск по тегам
                 if not match and self.search_tags_var.get():
                     try:
                         from core.models import File as FileModel
@@ -647,54 +634,37 @@ class MainWindow:
 
     def bind_hotkeys(self):
         """Привязывает горячие клавиши"""
-        
-        # Привязываем обработчик ко всем клавишам
         self.root.bind_all('<Key>', self.on_key_press)
-        
-        # F5 и Delete без модификаторов
         self.root.bind_all('<F5>', lambda e: self.refresh_files())
         self.root.bind_all('<Delete>', lambda e: self.delete_selected())
 
     def on_key_press(self, event):
-        """Обрабатывает нажатия клавиш для любой раскладки"""
-        
-        # Проверяем, нажат ли Ctrl (state & 0x4)
+        """Обрабатывает нажатия клавиш"""
         if event.state & 0x4:
-            # Получаем keysym и keysym_num
             keysym = event.keysym
             keysym_num = event.keysym_num
             
-            # Ctrl+F (английская f = 102, русская а = 1072)
             if keysym == 'f' or keysym_num == 102 or keysym_num == 1072:
                 self.focus_search()
                 return "break"
-            
-            # Ctrl+D (английская d = 100, русская в = 1074)
             elif keysym == 'd' or keysym_num == 100 or keysym_num == 1074:
                 self.download_selected()
                 return "break"
-            
-            # Ctrl+R (английская r = 114, русская к = 1082)
             elif keysym == 'r' or keysym_num == 114 or keysym_num == 1082:
                 self.refresh_files()
                 return "break"
-            
-            # Ctrl+Q (английская q = 113, русская й = 1081)
             elif keysym == 'q' or keysym_num == 113 or keysym_num == 1081:
                 self.on_closing()
                 return "break"
         
-        # F5 - обновить
         if event.keysym == 'F5' or event.keysym_num == 65474:
             self.refresh_files()
             return "break"
         
-        # Delete - удалить
         if event.keysym == 'Delete' or event.keysym_num == 65535:
             self.delete_selected()
             return "break"
         
-        # Escape - сброс поиска
         if event.keysym == 'Escape' or event.keysym_num == 65307:
             self.clear_search()
             return "break"
@@ -732,43 +702,90 @@ class MainWindow:
         self.on_delete_file(selected[0])
 
     def show_shortcuts(self):
-        """Показывает список горячих клавиш"""
         shortcuts_text = """
-    Горячие клавиши:
+Горячие клавиши:
 
-    F5              - Обновить список файлов
-    Ctrl + R        - Обновить список файлов
+F5              - Обновить список файлов
+Ctrl + R        - Обновить список файлов
 
-    Ctrl + F        - Перейти к поиску
+Ctrl + F        - Перейти к поиску
 
-    Ctrl + D        - Скачать выбранный файл
-    Delete (Del)    - Удалить выбранный файл
+Ctrl + D        - Скачать выбранный файл
+Delete (Del)    - Удалить выбранный файл
 
-    Ctrl + Q        - Выход из приложения
+Ctrl + Q        - Выход из приложения
 
-    В контекстном меню файла:
-        - Скачать
-        - Предпросмотр
-        - Назначить теги
-        - Удалить
-    """
+В контекстном меню файла:
+    - Скачать
+    - Предпросмотр
+    - Назначить теги
+    - Удалить
+"""
         messagebox.showinfo("Горячие клавиши", shortcuts_text)
 
+    def show_settings(self):
+        """Показывает окно настроек"""
+        from gui.settings_dialog import SettingsDialog
+        
+        current_settings = {
+            'monitor_interval': self.monitor.check_interval if self.monitor else 300,
+            'show_notifications': True
+        }
+        
+        dialog = SettingsDialog(self.root, current_settings)
+        new_settings = dialog.run()
+        
+        if new_settings:
+            self.apply_settings(new_settings)
+
+    def apply_settings(self, settings):
+        """Применяет новые настройки"""
+        
+        print(f"DEBUG: apply_settings вызван с настройками: {settings}")
+        
+        # Интервал мониторинга
+        if self.monitor and settings['monitor_interval'] != self.monitor.check_interval:
+            self.monitor.check_interval = settings['monitor_interval']
+            self.status_var.set(f"Интервал мониторинга изменён на {settings['monitor_interval']} секунд")
+        
+        # Сохраняем настройки в файл
+        self.save_settings_to_file(settings)
+
+    def save_settings_to_file(self, settings):
+        import json
+        settings_file = os.path.join(os.path.dirname(__file__), 'settings.json')
+        try:
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+            print(f"Настройки сохранены в {settings_file}")
+        except Exception as e:
+            print(f"Ошибка сохранения настроек: {e}")
+
+    def load_settings_from_file(self):
+        import json
+        settings_file = os.path.join(os.path.dirname(__file__), 'settings.json')
+        if os.path.exists(settings_file):
+            try:
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                return settings
+            except Exception as e:
+                print(f"Ошибка загрузки настроек: {e}")
+        return None
+
     def run(self):
-        """Запускает главный цикл приложения"""
         self.root.mainloop()
 
     def on_preview_file(self, file_item):
-        """Показывает предпросмотр файла"""
         from gui.preview_dialog import PreviewDialog
         
-        file_type = file_item.get('type')
-        if file_type == 'dir':
+        if file_item.get('type') == 'dir':
             self.status_var.set("Предпросмотр папок не поддерживается")
             return
         
         dialog = PreviewDialog(self.root, file_item)
         dialog.run()
+
 
 if __name__ == "__main__":
     app = MainWindow()
