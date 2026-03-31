@@ -62,6 +62,8 @@ class MainWindow:
         self.create_main_layout()
         self.create_status_bar()
 
+        self.bind_hotkeys()
+
         # Загружаем данные
         self.load_user()
 
@@ -103,17 +105,17 @@ class MainWindow:
         
         # Меню "Файл"
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Авторизация", command=self.show_auth_dialog)
+        file_menu.add_command(label="Авторизация", command=self.show_auth_dialog, accelerator="")
         file_menu.add_separator()
-        file_menu.add_command(label="Выход", command=self.on_closing)
+        file_menu.add_command(label="Выход", command=self.on_closing, accelerator="Ctrl+Q")
         menubar.add_cascade(label="Файл", menu=file_menu)
 
         # Меню "Диск"
         disk_menu = tk.Menu(menubar, tearoff=0)
-        disk_menu.add_command(label="Обновить", command=self.refresh_files)
-        disk_menu.add_command(label="Загрузить файл", command=self.upload_file)
+        disk_menu.add_command(label="Обновить", command=self.refresh_files, accelerator="F5")
+        disk_menu.add_command(label="Загрузить файл", command=self.upload_file, accelerator="")
         disk_menu.add_separator()
-        disk_menu.add_command(label="Создать папку", command=self.create_folder)
+        disk_menu.add_command(label="Создать папку", command=self.create_folder, accelerator="")
         menubar.add_cascade(label="Диск", menu=disk_menu)
 
         # Меню "Вид"
@@ -125,6 +127,7 @@ class MainWindow:
         # Меню "Помощь"
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="О программе", command=self.show_about)
+        help_menu.add_command(label="Горячие клавиши", command=self.show_shortcuts)
         menubar.add_cascade(label="Помощь", menu=help_menu)
 
         self.root.config(menu=menubar)
@@ -268,7 +271,7 @@ class MainWindow:
         )
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # Индикатор подключения (обновляется при авторизации)
+        # Индикатор подключения
         self.connection_var = tk.StringVar()
         self.connection_var.set("● Не подключено")
         
@@ -278,6 +281,15 @@ class MainWindow:
             padding=(5, 2)
         )
         connection_label.pack(side=tk.RIGHT)
+        
+        # Подсказка о горячих клавишах (справа)
+        hint_label = ttk.Label(
+            status_bar,
+            text="F5: обновить | Ctrl+F: поиск | Ctrl+D: скачать | Del: удалить",
+            padding=(5, 2),
+            foreground="gray"
+        )
+        hint_label.pack(side=tk.RIGHT, padx=10)
 
     def load_user(self):
         """Загружает текущего пользователя"""
@@ -621,7 +633,8 @@ class MainWindow:
 
     def clear_search(self):
         """Сбрасывает поиск"""
-        self.search_var.set("")
+        if hasattr(self, 'search_var'):
+            self.search_var.set("")
         self.refresh_files()
 
     def on_closing(self):
@@ -631,6 +644,115 @@ class MainWindow:
 
         if messagebox.askokcancel("Выход", "Закрыть приложение?"):
             self.root.destroy()
+
+    def bind_hotkeys(self):
+        """Привязывает горячие клавиши"""
+        
+        # Привязываем обработчик ко всем клавишам
+        self.root.bind_all('<Key>', self.on_key_press)
+        
+        # F5 и Delete без модификаторов
+        self.root.bind_all('<F5>', lambda e: self.refresh_files())
+        self.root.bind_all('<Delete>', lambda e: self.delete_selected())
+
+    def on_key_press(self, event):
+        """Обрабатывает нажатия клавиш для любой раскладки"""
+        
+        # Проверяем, нажат ли Ctrl (state & 0x4)
+        if event.state & 0x4:
+            # Получаем keysym и keysym_num
+            keysym = event.keysym
+            keysym_num = event.keysym_num
+            
+            # Ctrl+F (английская f = 102, русская а = 1072)
+            if keysym == 'f' or keysym_num == 102 or keysym_num == 1072:
+                self.focus_search()
+                return "break"
+            
+            # Ctrl+D (английская d = 100, русская в = 1074)
+            elif keysym == 'd' or keysym_num == 100 or keysym_num == 1074:
+                self.download_selected()
+                return "break"
+            
+            # Ctrl+R (английская r = 114, русская к = 1082)
+            elif keysym == 'r' or keysym_num == 114 or keysym_num == 1082:
+                self.refresh_files()
+                return "break"
+            
+            # Ctrl+Q (английская q = 113, русская й = 1081)
+            elif keysym == 'q' or keysym_num == 113 or keysym_num == 1081:
+                self.on_closing()
+                return "break"
+        
+        # F5 - обновить
+        if event.keysym == 'F5' or event.keysym_num == 65474:
+            self.refresh_files()
+            return "break"
+        
+        # Delete - удалить
+        if event.keysym == 'Delete' or event.keysym_num == 65535:
+            self.delete_selected()
+            return "break"
+        
+        # Escape - сброс поиска
+        if event.keysym == 'Escape' or event.keysym_num == 65307:
+            self.clear_search()
+            return "break"
+        
+        return None
+
+    def focus_search(self):
+        """Устанавливает фокус на поле поиска"""
+        if hasattr(self, 'search_entry'):
+            self.search_entry.focus_set()
+            self.search_entry.select_range(0, tk.END)
+            self.status_var.set("Поиск (Ctrl+F для фокуса)")
+
+    def download_selected(self):
+        """Скачивает выбранный файл"""
+        selected = self.file_list.get_selected_items()
+        if not selected:
+            self.status_var.set("Нет выбранного файла для скачивания")
+            return
+        
+        file_item = selected[0]
+        if file_item.get('type') == 'dir':
+            self.status_var.set("Скачивание папок не поддерживается")
+            return
+        
+        self.download_file(file_item)
+
+    def delete_selected(self):
+        """Удаляет выбранный файл"""
+        selected = self.file_list.get_selected_items()
+        if not selected:
+            self.status_var.set("Нет выбранного файла для удаления")
+            return
+        
+        self.on_delete_file(selected[0])
+
+    def show_shortcuts(self):
+        """Показывает список горячих клавиш"""
+        shortcuts_text = """
+    Горячие клавиши:
+
+    F5              - Обновить список файлов
+    Ctrl + R        - Обновить список файлов
+
+    Ctrl + F        - Перейти к поиску
+
+    Ctrl + D        - Скачать выбранный файл
+    Delete (Del)    - Удалить выбранный файл
+
+    Ctrl + Q        - Выход из приложения
+
+    В контекстном меню файла:
+        - Скачать
+        - Предпросмотр
+        - Назначить теги
+        - Удалить
+    """
+        messagebox.showinfo("Горячие клавиши", shortcuts_text)
 
     def run(self):
         """Запускает главный цикл приложения"""
