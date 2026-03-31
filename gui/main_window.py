@@ -8,10 +8,9 @@ import threading
 try:
     from ttkthemes import ThemedTk
     USE_THEMES = True
-    print("DEBUG: ttkthemes успешно импортирован")
 except ImportError:
     USE_THEMES = False
-    print("DEBUG: ttkthemes НЕ установлен, используется стандартный Tk")
+    print("Для улучшенного интерфейса установите: pip install ttkthemes")
     from tkinter import Tk
 
 # Добавляем путь к проекту
@@ -41,22 +40,12 @@ class MainWindow:
         # Создаём окно с темой
         if USE_THEMES:
             self.root = ThemedTk(theme="radiance")
-            print(f"DEBUG: Создано окно ThemedTk с темой radiance")
         else:
             self.root = Tk()
-            print(f"DEBUG: Создано обычное окно Tk")
         
         self.root.title("Менеджер Яндекс.Диска")
         self.root.geometry("1300x750")
         self.root.minsize(900, 600)
-        
-        print(f"DEBUG: USE_THEMES = {USE_THEMES}")
-        print(f"DEBUG: Тип self.root = {type(self.root)}")
-        if USE_THEMES:
-            try:
-                print(f"DEBUG: Текущая тема: {self.root.get_theme()}")
-            except Exception as e:
-                print(f"DEBUG: Ошибка получения темы: {e}")
         
         # Настраиваем стили
         self.setup_styles()
@@ -66,6 +55,11 @@ class MainWindow:
         self.monitor = None
         self.current_user = None
         self.current_path = '/'
+        
+        # Права пользователя
+        self.user_can_upload = False
+        self.user_can_delete = False
+        self.user_can_manage_tags = False
 
         # Создаём интерфейс
         self.create_menu()
@@ -80,7 +74,7 @@ class MainWindow:
         # История навигации (стек)
         self.navigation_history = []
 
-        self.original_files = []  # Для хранения оригинального списка файлов
+        self.original_files = []
 
         saved_settings = self.load_settings_from_file()
         if saved_settings:
@@ -92,24 +86,12 @@ class MainWindow:
     def setup_styles(self):
         """Настраивает стили для всего приложения"""
         style = ttk.Style()
-        
-        # Сбрасываем старые настройки
         style.theme_use(style.theme_use())
-        
-        # Настройка Treeview
         style.configure('Treeview', rowheight=28)
         style.configure('Treeview.Heading', font=('Segoe UI', 9, 'bold'))
-        
-        # Настройка кнопок
         style.configure('Action.TButton', font=('Segoe UI', 9))
-        
-        # Настройка заголовков
         style.configure('Title.TLabel', font=('Segoe UI', 10, 'bold'))
-        
-        # Настройка строки состояния
         style.configure('Status.TLabel', font=('Segoe UI', 9), foreground='gray')
-        
-        # Принудительно обновляем отображение всех виджетов
         self.root.update_idletasks()
 
     def create_menu(self):
@@ -125,13 +107,13 @@ class MainWindow:
         file_menu.add_command(label="Выход", command=self.on_closing, accelerator="Ctrl+Q")
         menubar.add_cascade(label="Файл", menu=file_menu)
 
-        # Меню "Диск"
-        disk_menu = tk.Menu(menubar, tearoff=0)
-        disk_menu.add_command(label="Обновить", command=self.refresh_files, accelerator="F5")
-        disk_menu.add_command(label="Загрузить файл", command=self.upload_file)
-        disk_menu.add_separator()
-        disk_menu.add_command(label="Создать папку", command=self.create_folder)
-        menubar.add_cascade(label="Диск", menu=disk_menu)
+        # Меню "Диск" — сохраняем ссылку для обновления прав
+        self.disk_menu = tk.Menu(menubar, tearoff=0)
+        self.disk_menu.add_command(label="Обновить", command=self.refresh_files, accelerator="F5")
+        self.disk_menu.add_command(label="Загрузить файл", command=self.upload_file)
+        self.disk_menu.add_separator()
+        self.disk_menu.add_command(label="Создать папку", command=self.create_folder)
+        menubar.add_cascade(label="Диск", menu=self.disk_menu)
 
         # Меню "Вид"
         view_menu = tk.Menu(menubar, tearoff=0)
@@ -146,14 +128,27 @@ class MainWindow:
         menubar.add_cascade(label="Помощь", menu=help_menu)
 
         self.root.config(menu=menubar)
+        
+        # Применяем права после создания меню (если права уже определены)
+        if hasattr(self, 'user_can_upload'):
+            self.update_menu_permissions()
+
+    def update_menu_permissions(self):
+        """Обновляет состояние пунктов меню в зависимости от прав"""
+        if hasattr(self, 'disk_menu'):
+            # Индексы: 0-Обновить, 1-Загрузить файл, 2-разделитель, 3-Создать папку
+            upload_state = tk.NORMAL if self.user_can_upload else tk.DISABLED
+            try:
+                self.disk_menu.entryconfig(1, state=upload_state)
+                self.disk_menu.entryconfig(3, state=upload_state)
+            except:
+                pass
 
     def create_main_layout(self):
         """Создаёт основную компоновку (3 панели)"""
-        # Основной контейнер с отступами
         main_container = ttk.Frame(self.root, padding="5")
         main_container.pack(fill=tk.BOTH, expand=True)
         
-        # Создаём PanedWindow для разделения панелей
         self.main_paned = ttk.PanedWindow(main_container, orient=tk.HORIZONTAL)
         self.main_paned.pack(fill=tk.BOTH, expand=True)
         
@@ -171,44 +166,23 @@ class MainWindow:
         center_frame = ttk.LabelFrame(self.main_paned, text=" Файлы и папки ", padding=5)
         center_frame.pack_propagate(False)
 
-        # --- НАВИГАЦИОННАЯ ПАНЕЛЬ ---
+        # Навигационная панель
         nav_frame = ttk.Frame(center_frame)
         nav_frame.pack(fill=tk.X, pady=(0, 5))
 
-        # Кнопка "Назад"
-        self.back_button = ttk.Button(
-            nav_frame,
-            text="Назад",
-            command=self.go_back,
-            width=8
-        )
+        self.back_button = ttk.Button(nav_frame, text="Назад", command=self.go_back, width=8)
         self.back_button.pack(side=tk.LEFT, padx=(0, 10))
 
-        # Отображение текущего пути
         self.path_var = tk.StringVar()
         self.path_var.set("/")
-
-        path_label = ttk.Label(
-            nav_frame,
-            textvariable=self.path_var,
-            font=('Segoe UI', 9),
-            relief=tk.SUNKEN,
-            anchor=tk.W,
-            padding=(5, 2)
-        )
+        path_label = ttk.Label(nav_frame, textvariable=self.path_var, font=('Segoe UI', 9),
+                               relief=tk.SUNKEN, anchor=tk.W, padding=(5, 2))
         path_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        # Кнопка "Обновить"
-        refresh_button = ttk.Button(
-            nav_frame,
-            text="Обновить",
-            command=self.refresh_files,
-            width=8
-        )
+        refresh_button = ttk.Button(nav_frame, text="Обновить", command=self.refresh_files, width=8)
         refresh_button.pack(side=tk.RIGHT, padx=(5, 0))
-        # --- КОНЕЦ НАВИГАЦИОННОЙ ПАНЕЛИ ---
 
-        # --- СТРОКА ПОИСКА  ---
+        # Строка поиска
         search_frame = ttk.Frame(center_frame)
         search_frame.pack(fill=tk.X, pady=(0, 5))
 
@@ -220,38 +194,28 @@ class MainWindow:
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
-        # Кнопка сброса поиска
-        self.search_clear_button = ttk.Button(
-            search_frame,
-            text="X",
-            command=self.clear_search,
-            width=3
-        )
+        self.search_clear_button = ttk.Button(search_frame, text="X", command=self.clear_search, width=3)
         self.search_clear_button.pack(side=tk.RIGHT)
 
-        # Чекбокс "Поиск по тегам"
         self.search_tags_var = tk.BooleanVar()
-        self.search_tags_check = ttk.Checkbutton(
-            search_frame,
-            text="По тегам",
-            variable=self.search_tags_var,
-            command=self.on_search
-        )
+        self.search_tags_check = ttk.Checkbutton(search_frame, text="По тегам",
+                                                 variable=self.search_tags_var, command=self.on_search)
         self.search_tags_check.pack(side=tk.RIGHT, padx=(10, 0))
 
-        # Чекбокс "Поиск по имени"
         self.search_name_var = tk.BooleanVar(value=True)
-        self.search_name_check = ttk.Checkbutton(
-            search_frame,
-            text="По имени",
-            variable=self.search_name_var,
-            command=self.on_search
-        )
+        self.search_name_check = ttk.Checkbutton(search_frame, text="По имени",
+                                                  variable=self.search_name_var, command=self.on_search)
         self.search_name_check.pack(side=tk.RIGHT, padx=(10, 0))
-        # --- КОНЕЦ СТРОКИ ПОИСКА ---
 
         self.file_list = FileListWidget(center_frame)
         self.file_list.pack(fill=tk.BOTH, expand=True)
+        
+        # Передаём права в виджет списка файлов
+        self.file_list.set_permissions(
+            can_delete=self.user_can_delete,
+            can_manage_tags=self.user_can_manage_tags
+        )
+        
         self.main_paned.add(center_frame, weight=3)
         
         # Правая панель (история изменений)
@@ -278,32 +242,16 @@ class MainWindow:
         self.status_var = tk.StringVar()
         self.status_var.set("Готов")
         
-        status_label = ttk.Label(
-            status_bar,
-            textvariable=self.status_var,
-            anchor=tk.W,
-            padding=(5, 2)
-        )
+        status_label = ttk.Label(status_bar, textvariable=self.status_var, anchor=tk.W, padding=(5, 2))
         status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # Индикатор подключения
         self.connection_var = tk.StringVar()
         self.connection_var.set("Не подключено")
-        
-        connection_label = ttk.Label(
-            status_bar,
-            textvariable=self.connection_var,
-            padding=(5, 2)
-        )
+        connection_label = ttk.Label(status_bar, textvariable=self.connection_var, padding=(5, 2))
         connection_label.pack(side=tk.RIGHT)
         
-        # Подсказка о горячих клавишах
-        hint_label = ttk.Label(
-            status_bar,
-            text="F5: обновить | Ctrl+F: поиск | Ctrl+D: скачать | Del: удалить",
-            padding=(5, 2),
-            foreground="gray"
-        )
+        hint_label = ttk.Label(status_bar, text="F5: обновить | Ctrl+F: поиск | Ctrl+D: скачать | Del: удалить",
+                               padding=(5, 2), foreground="gray")
         hint_label.pack(side=tk.RIGHT, padx=10)
 
     def load_user(self):
@@ -312,6 +260,26 @@ class MainWindow:
         if username:
             self.current_user = username
             self.status_var.set(f"Пользователь: {username}")
+
+            # Проверяем права
+            self.user_can_upload = has_permission(username, 'upload')
+            self.user_can_delete = has_permission(username, 'delete')
+            self.user_can_manage_tags = has_permission(username, 'manage_tags')
+            
+            print(f"DEBUG: Права пользователя {username}:")
+            print(f"  upload: {self.user_can_upload}")
+            print(f"  delete: {self.user_can_delete}")
+            print(f"  manage_tags: {self.user_can_manage_tags}")
+            
+            # Обновляем права в виджете списка файлов
+            if hasattr(self, 'file_list'):
+                self.file_list.set_permissions(
+                    can_delete=self.user_can_delete,
+                    can_manage_tags=self.user_can_manage_tags
+                )
+            
+            # Обновляем меню (права уже установлены)
+            self.update_menu_permissions()
 
             token = get_token_for_user(username)
             if token:
@@ -385,6 +353,10 @@ class MainWindow:
 
     def upload_file(self):
         """Загружает файл на диск"""
+        if not self.user_can_upload:
+            self.status_var.set("У вас нет прав на загрузку файлов")
+            return
+            
         file_path = filedialog.askopenfilename(title="Выберите файл для загрузки")
         if not file_path:
             return
@@ -410,6 +382,10 @@ class MainWindow:
 
     def create_folder(self):
         """Создаёт новую папку"""
+        if not self.user_can_upload:
+            self.status_var.set("У вас нет прав на создание папок")
+            return
+            
         folder_name = simpledialog.askstring(
             "Создать папку",
             "Введите название папки:",
@@ -483,6 +459,10 @@ class MainWindow:
 
     def on_assign_tags(self, file_item):
         """Назначает теги файлу"""
+        if not self.user_can_manage_tags:
+            self.status_var.set("У вас нет прав на управление тегами")
+            return
+            
         file_path = file_item.get('path')
         file_name = file_item.get('name')
         
@@ -520,6 +500,10 @@ class MainWindow:
 
     def on_delete_file(self, file_item):
         """Удаляет файл с диска"""
+        if not self.user_can_delete:
+            self.status_var.set("У вас нет прав на удаление файлов")
+            return
+            
         file_name = file_item.get('name')
         remote_path = file_item.get('path')
         
@@ -718,8 +702,8 @@ Ctrl + Q        - Выход из приложения
 В контекстном меню файла:
     - Скачать
     - Предпросмотр
-    - Назначить теги
-    - Удалить
+    - Назначить теги (только Manager и Admin)
+    - Удалить (только Admin)
 """
         messagebox.showinfo("Горячие клавиши", shortcuts_text)
 
@@ -740,8 +724,6 @@ Ctrl + Q        - Выход из приложения
 
     def apply_settings(self, settings):
         """Применяет новые настройки"""
-        
-        print(f"DEBUG: apply_settings вызван с настройками: {settings}")
         
         # Интервал мониторинга
         if self.monitor and settings['monitor_interval'] != self.monitor.check_interval:

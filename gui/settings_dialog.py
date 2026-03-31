@@ -9,7 +9,6 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from core.models import User
 from core.yandex.storage import get_current_user
 
 
@@ -21,11 +20,10 @@ class SettingsDialog:
         self.settings = settings
         self.result = None
         
-        # Создаём окно - увеличиваем размер
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Настройки")
-        self.dialog.geometry("550x600")  # было 800x600
-        self.dialog.minsize(500, 500)
+        self.dialog.geometry("800x600")
+        self.dialog.minsize(800, 600)
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -100,6 +98,17 @@ class SettingsDialog:
             command=self.switch_user
         ).pack(anchor=tk.W, pady=5)
         
+        # Информация о ролях
+        roles_frame = ttk.LabelFrame(main, text="Роли пользователей", padding=10)
+        roles_frame.pack(fill=tk.X, pady=5)
+        
+        roles_text = """
+Admin: полный доступ (просмотр, загрузка, удаление, управление тегами)
+Manager: просмотр, загрузка, управление тегами
+Viewer: только просмотр
+"""
+        ttk.Label(roles_frame, text=roles_text, justify=tk.LEFT).pack(anchor=tk.W)
+        
         # --- КНОПКИ ---
         btn_frame = ttk.Frame(main)
         btn_frame.pack(fill=tk.X, pady=15)
@@ -122,8 +131,6 @@ class SettingsDialog:
         """Загружает текущие настройки"""
         if 'monitor_interval' in self.settings:
             self.interval_var.set(self.settings['monitor_interval'])
-        if 'theme' in self.settings:
-            self.theme_var.set(self.settings['theme'])
         if 'show_notifications' in self.settings:
             self.notify_var.set(self.settings['show_notifications'])
     
