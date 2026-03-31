@@ -1,9 +1,10 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 import sys
 import os
 import threading
 import time
+import csv
 from datetime import datetime, timedelta
 
 # Добавляем путь к проекту
@@ -32,9 +33,19 @@ class NotificationsWidget(ttk.Frame):
 
     def create_widgets(self):
         """Создаёт элементы интерфейса"""
-        # Заголовок
-        title = ttk.Label(self, text="История изменений", font=('Arial', 10, 'bold'))
-        title.pack(pady=5)
+        # Заголовок с кнопкой экспорта
+        title_frame = ttk.Frame(self)
+        title_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(title_frame, text="История изменений", font=('Arial', 10, 'bold')).pack(side=tk.LEFT)
+
+        export_button = ttk.Button(
+            title_frame,
+            text="Экспорт в CSV",
+            command=self.export_report,
+            width=8
+        )
+        export_button.pack(side=tk.RIGHT, padx=5)
         
         # --- ПАНЕЛЬ ФИЛЬТРА ---
         filter_frame = ttk.Frame(self)
@@ -214,3 +225,70 @@ class NotificationsWidget(ttk.Frame):
             self._add_notification(change)
             if change.id not in self.notifications:
                 self.notifications.append(change.id)
+
+    def export_report(self):
+        """Экспортирует историю изменений в CSV файл"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Спрашиваем у пользователя куда сохранить
+        file_path = filedialog.asksaveasfilename(
+            title="Сохранить отчёт",
+            defaultextension=".csv",
+            filetypes=[("CSV файлы", "*.csv"), ("Все файлы", "*.*")]
+        )
+        
+        if not file_path:
+            return
+        
+        # Определяем фильтр по дате
+        filter_value = self.filter_var.get()
+        now = timezone.now()
+        
+        if filter_value == "day":
+            start_date = now - timedelta(days=1)
+        elif filter_value == "week":
+            start_date = now - timedelta(days=7)
+        elif filter_value == "month":
+            start_date = now - timedelta(days=30)
+        else:
+            start_date = None
+        
+        # Получаем данные с учётом фильтра
+        if start_date:
+            changes = ChangeLog.objects.filter(
+                changed_at__gte=start_date
+            ).order_by('-changed_at')
+        else:
+            changes = ChangeLog.objects.all().order_by('-changed_at')
+        
+        # Записываем в CSV
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
+                writer = csv.writer(csvfile, delimiter=';')
+                
+                # Заголовки
+                writer.writerow([
+                    'Дата и время',
+                    'Тип изменения',
+                    'Путь к файлу',
+                    'Имя файла',
+                    'Пользователь',
+                    'Источник'
+                ])
+                
+                # Данные
+                for change in changes:
+                    writer.writerow([
+                        change.changed_at.strftime('%d.%m.%Y %H:%M'),
+                        change.get_change_type_display(),
+                        change.file_path,
+                        change.file_path.split('/')[-1] if change.file_path else '',
+                        change.changed_by.username if change.changed_by else '',
+                        change.get_source_display()
+                    ])
+            
+            messagebox.showinfo("Успех", f"Отчёт сохранён в:\n{file_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить отчёт:\n{e}")
