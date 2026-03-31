@@ -68,6 +68,8 @@ class MainWindow:
         # История навигации (стек)
         self.navigation_history = []
 
+        self.original_files = []  # Для хранения оригинального списка файлов
+
         # Настраиваем закрытие
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
     
@@ -150,24 +152,24 @@ class MainWindow:
         # Центральная панель (список файлов)
         center_frame = ttk.LabelFrame(self.main_paned, text=" Файлы и папки ", padding=5)
         center_frame.pack_propagate(False)
-        
+
         # --- НАВИГАЦИОННАЯ ПАНЕЛЬ ---
         nav_frame = ttk.Frame(center_frame)
         nav_frame.pack(fill=tk.X, pady=(0, 5))
-        
+
         # Кнопка "Назад"
         self.back_button = ttk.Button(
             nav_frame,
-            text="← Назад",
+            text="Назад",
             command=self.go_back,
             width=8
         )
         self.back_button.pack(side=tk.LEFT, padx=(0, 10))
-        
+
         # Отображение текущего пути
         self.path_var = tk.StringVar()
         self.path_var.set("/")
-        
+
         path_label = ttk.Label(
             nav_frame,
             textvariable=self.path_var,
@@ -177,17 +179,59 @@ class MainWindow:
             padding=(5, 2)
         )
         path_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
+
         # Кнопка "Обновить"
         refresh_button = ttk.Button(
             nav_frame,
-            text="↻",
+            text="Обновить",
             command=self.refresh_files,
-            width=3
+            width=8
         )
         refresh_button.pack(side=tk.RIGHT, padx=(5, 0))
         # --- КОНЕЦ НАВИГАЦИОННОЙ ПАНЕЛИ ---
-        
+
+        # --- СТРОКА ПОИСКА  ---
+        search_frame = ttk.Frame(center_frame)
+        search_frame.pack(fill=tk.X, pady=(0, 5))
+
+        ttk.Label(search_frame, text="Поиск:", width=6).pack(side=tk.LEFT)
+
+        self.search_var = tk.StringVar()
+        self.search_var.trace('w', lambda *args: self.on_search())  # Вызываем при каждом изменении
+
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
+        # Кнопка сброса поиска
+        self.search_clear_button = ttk.Button(
+            search_frame,
+            text="X",
+            command=self.clear_search,
+            width=3
+        )
+        self.search_clear_button.pack(side=tk.RIGHT)
+
+        # Чекбокс "Поиск по тегам"
+        self.search_tags_var = tk.BooleanVar()
+        self.search_tags_check = ttk.Checkbutton(
+            search_frame,
+            text="По тегам",
+            variable=self.search_tags_var,
+            command=self.on_search
+        )
+        self.search_tags_check.pack(side=tk.RIGHT, padx=(10, 0))
+
+        # Чекбокс "Поиск по имени"
+        self.search_name_var = tk.BooleanVar(value=True)
+        self.search_name_check = ttk.Checkbutton(
+            search_frame,
+            text="По имени",
+            variable=self.search_name_var,
+            command=self.on_search
+        )
+        self.search_name_check.pack(side=tk.RIGHT, padx=(10, 0))
+        # --- КОНЕЦ СТРОКИ ПОИСКА ---
+
         self.file_list = FileListWidget(center_frame)
         self.file_list.pack(fill=tk.BOTH, expand=True)
         self.main_paned.add(center_frame, weight=3)
@@ -304,17 +348,16 @@ class MainWindow:
         self.status_var.set("Загрузка списка файлов...")
         self.root.update()
         
-        # Обновляем отображение пути
         self.update_path_display()
 
         try:
-            files = self.client.get_files_list(self.current_path)
-            self.file_list.update_files(files)
+            self.original_files = self.client.get_files_list(self.current_path)
+            self.file_list.update_files(self.original_files)
             
             # Обновляем теги из БД
             self.file_list.update_tags_from_db()
             
-            self.status_var.set(f"Загружено {len(files)} элементов")
+            self.status_var.set(f"Загружено {len(self.original_files)} элементов")
         except Exception as e:
             self.status_var.set(f"Ошибка загрузки: {e}")
 
@@ -531,6 +574,54 @@ class MainWindow:
             "с поддержкой мониторинга изменений и системы тегов.\n\n"
             "Разработано в рамках ВКР"
         )
+
+    def on_search(self):
+        """Вызывается при изменении поискового запроса"""
+        query = self.search_var.get().strip()
+        
+        if not query:
+            self.clear_search()
+            return
+        
+        if not self.original_files:
+            return
+        
+        self.status_var.set(f"Поиск: {query}...")
+        self.root.update()
+        
+        try:
+            filtered_files = []
+            for f in self.original_files:
+                match = False
+                
+                # Поиск по имени
+                if self.search_name_var.get() and query.lower() in f.name.lower():
+                    match = True
+                
+                # Поиск по тегам
+                if not match and self.search_tags_var.get():
+                    try:
+                        from core.models import File as FileModel
+                        file_obj = FileModel.objects.get(path=f.path)
+                        tags = [tag.name.lower() for tag in file_obj.tags.all()]
+                        if any(query.lower() in tag for tag in tags):
+                            match = True
+                    except FileModel.DoesNotExist:
+                        pass
+                
+                if match:
+                    filtered_files.append(f)
+            
+            self.file_list.update_files(filtered_files)
+            self.status_var.set(f"Найдено {len(filtered_files)} из {len(self.original_files)} элементов")
+            
+        except Exception as e:
+            self.status_var.set(f"Ошибка поиска: {e}")
+
+    def clear_search(self):
+        """Сбрасывает поиск"""
+        self.search_var.set("")
+        self.refresh_files()
 
     def on_closing(self):
         """Обработка закрытия окна"""
