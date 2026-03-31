@@ -250,6 +250,7 @@ class MainWindow:
         self.file_list.bind_folder_change(self.on_folder_change)
         self.file_list.bind_assign_tags(self.on_assign_tags)
         self.file_list.bind_delete(self.on_delete_file)
+        self.file_list.bind_preview(self.on_preview_file)
 
     def create_status_bar(self):
         """Создаёт строку состояния"""
@@ -635,6 +636,17 @@ class MainWindow:
         """Запускает главный цикл приложения"""
         self.root.mainloop()
 
+    def on_preview_file(self, file_item):
+        """Показывает предпросмотр файла"""
+        from gui.preview_dialog import PreviewDialog
+        
+        file_type = file_item.get('type')
+        if file_type == 'dir':
+            self.status_var.set("Предпросмотр папок не поддерживается")
+            return
+        
+        dialog = PreviewDialog(self.root, file_item)
+        dialog.run()
 
 if __name__ == "__main__":
     app = MainWindow()

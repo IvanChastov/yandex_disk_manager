@@ -13,6 +13,7 @@ class FileListWidget(ttk.Frame):
         self.download_callback = None
         self.assign_tags_callback = None
         self.delete_callback = None
+        self.preview_callback = None
         
         self.create_widgets()
     
@@ -135,23 +136,31 @@ class FileListWidget(ttk.Frame):
     
     def on_context_menu(self, event):
         """Показывает контекстное меню"""
-        # Получаем элемент под курсором
         item_id = self.tree.identify_row(event.y)
         if not item_id:
             return
         
-        # Выделяем этот элемент
         self.tree.selection_set(item_id)
         
-        # Создаём меню
+        # Получаем данные элемента
+        if hasattr(self, '_items_data') and item_id in self._items_data:
+            item_data = self._items_data[item_id]
+        
         menu = tk.Menu(self, tearoff=0)
         menu.add_command(label="Скачать", command=self.on_download_selected)
+        menu.add_command(label="Предпросмотр", command=self.on_preview_selected)
+        menu.add_separator()
         menu.add_command(label="Назначить теги", command=self.on_assign_tags)
         menu.add_separator()
         menu.add_command(label="Удалить", command=self.on_delete_selected)
         
-        # Показываем меню
         menu.post(event.x_root, event.y_root)
+
+    def on_preview_selected(self):
+        """Вызывается при выборе пункта 'Предпросмотр'"""
+        selected = self.get_selected_items()
+        if selected and self.preview_callback:
+            self.preview_callback(selected[0])
     
     def on_download_selected(self):
         """Скачивает выбранный файл"""
@@ -185,3 +194,6 @@ class FileListWidget(ttk.Frame):
     
     def bind_delete(self, callback):
         self.delete_callback = callback
+
+    def bind_preview(self, callback):
+        self.preview_callback = callback
