@@ -44,3 +44,9 @@ yandex_credentials.json
 dist/
 build/
 *.egg-info/
+
+# Сборка PyInstaller
+dist/
+build/
+*.spec
+*.exe

@@ -231,6 +231,7 @@ class MainWindow:
         self.file_list.bind_double_click(self.on_file_double_click)
         self.file_list.bind_folder_change(self.on_folder_change)
         self.file_list.bind_assign_tags(self.on_assign_tags)
+        self.file_list.bind_download(self.download_file)
         self.file_list.bind_delete(self.on_delete_file)
         self.file_list.bind_preview(self.on_preview_file)
 
