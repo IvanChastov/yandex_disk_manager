@@ -9,16 +9,20 @@ from core.yandex.storage import get_current_user
 
 
 class DiskMonitor:
-    def __init__(self, username=None, check_interval=300, on_change_callback=None):
-        self.username = username or get_current_user()
+    def __init__(self, username=None, check_interval=300, on_change_callback=None, corporate_token=None):
+        self.username = username
         self.check_interval = check_interval
         self.running = False
         self.thread = None
         self.client = None
         self.on_change_callback = on_change_callback
+        self.corporate_token = corporate_token  # Добавляем возможность передать токен напрямую
 
-        if not self.username:
-            raise ValueError("Не указан пользователь для мониторинга")
+        # Если передан токен, не требуем username
+        if not self.corporate_token and not self.username:
+            self.username = get_current_user()
+            if not self.username:
+                raise ValueError("Не указан пользователь для мониторинга")
 
     def start(self):
         if self.running:
@@ -27,7 +31,7 @@ class DiskMonitor:
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
-        print(f"Мониторинг запущен для пользователя {self.username}")
+        print(f"Мониторинг запущен для пользователя {self.username or 'корпоративный'}")
 
     def stop(self):
         self.running = False
@@ -37,7 +41,11 @@ class DiskMonitor:
 
     def _run(self):
         try:
-            self.client = YandexDiskClient(username=self.username)
+            # Если есть корпоративный токен, используем его
+            if self.corporate_token:
+                self.client = YandexDiskClient(token=self.corporate_token)
+            else:
+                self.client = YandexDiskClient(username=self.username)
             print("Клиент Яндекс.Диска создан для мониторинга")
         except Exception as e:
             print(f"Ошибка создания клиента: {e}")

@@ -101,8 +101,6 @@ class MainWindow:
         
         # Меню "Файл"
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="Авторизация", command=self.show_auth_dialog)
-        file_menu.add_separator()
         file_menu.add_command(label="Настройки", command=self.show_settings)
         file_menu.add_separator()
         file_menu.add_command(label="Выход", command=self.on_closing, accelerator="Ctrl+Q")
@@ -252,63 +250,6 @@ class MainWindow:
                                padding=(5, 2), foreground="gray")
         hint_label.pack(side=tk.RIGHT, padx=10)
 
-    def load_user(self):
-        """Загружает текущего пользователя"""
-        username = get_current_user()
-        if username:
-            self.current_user = username
-            self.status_var.set(f"Пользователь: {username}")
-
-            # Проверяем права
-            self.user_can_upload = has_permission(username, 'upload')
-            self.user_can_delete = has_permission(username, 'delete')
-            self.user_can_manage_tags = has_permission(username, 'manage_tags')
-            
-            print(f"DEBUG: Права пользователя {username}:")
-            print(f"  upload: {self.user_can_upload}")
-            print(f"  delete: {self.user_can_delete}")
-            print(f"  manage_tags: {self.user_can_manage_tags}")
-            
-            # Обновляем права в виджете списка файлов
-            if hasattr(self, 'file_list'):
-                self.file_list.set_permissions(
-                    can_delete=self.user_can_delete,
-                    can_manage_tags=self.user_can_manage_tags
-                )
-            
-            # Обновляем меню (права уже установлены)
-            self.update_menu_permissions()
-
-            token = get_token_for_user(username)
-            if token:
-                self.init_client(token)
-            else:
-                self.status_var.set("Нет токена. Нажмите Файл -> Авторизация")
-                self.connection_var.set("Не авторизован")
-        else:
-            self.status_var.set("Пользователь не найден. Создайте пользователя в админке")
-            self.connection_var.set("Ошибка")
-
-    def init_client(self, token):
-        """Инициализирует клиент и загружает данные"""
-        try:
-            self.client = YandexDiskClient(token=token, username=self.current_user)
-            self.status_var.set("Подключено к Яндекс.Диску")
-            self.connection_var.set("Подключено")
-            self.refresh_files()
-            self.start_monitor()
-        except Exception as e:
-            self.status_var.set(f"Ошибка подключения: {e}")
-            self.connection_var.set("Ошибка")
-
-    def show_auth_dialog(self):
-        """Показывает диалог авторизации"""
-        dialog = AuthDialog(self.root)
-        token = dialog.run()
-
-        if token:
-            self.init_client(token)
-
     def show_login(self):
         """Показывает окно входа"""
         from gui.login_dialog import LoginDialog
@@ -414,6 +355,8 @@ class MainWindow:
             
             admin_menu = tk.Menu(menubar, tearoff=0)
             admin_menu.add_command(label="Управление пользователями", command=self.show_admin_panel)
+            admin_menu.add_separator()
+            admin_menu.add_command(label="Сменить токен", command=self.change_token)
             menubar.add_cascade(label="Админ", menu=admin_menu)
 
     def update_menu_for_role(self):
@@ -445,12 +388,18 @@ class MainWindow:
             self.monitor.stop()
 
         try:
-            # Используем имя текущего пользователя для мониторинга
-            username = self.current_user.username if self.current_user else None
+            # Получаем корпоративный токен из файла
+            token_file = os.path.join(os.path.dirname(__file__), '..', 'yandex_token.txt')
+            corporate_token = None
+            if os.path.exists(token_file):
+                with open(token_file, 'r') as f:
+                    corporate_token = f.read().strip()
+            
             self.monitor = DiskMonitor(
-                username=username,
+                username=None,
                 check_interval=300,
-                on_change_callback=self.on_monitor_change
+                on_change_callback=self.on_monitor_change,
+                corporate_token=corporate_token  # передаём токен напрямую
             )
             self.monitor.start()
             print("Мониторинг запущен")
@@ -665,6 +614,27 @@ class MainWindow:
             self.refresh_files()
         else:
             self.status_var.set("Нет предыдущей папки")
+
+    def change_token(self):
+        """Смена корпоративного токена (только для администратора)"""
+        from tkinter import simpledialog, messagebox
+        import os
+        
+        token = simpledialog.askstring(
+            "Смена токена",
+            "Введите новый токен для доступа к Яндекс.Диску:\n\n"
+            "Токен будет сохранён в файл yandex_token.txt\n"
+            "После сохранения приложение перезапустится.",
+            parent=self.root,
+            show='*'
+        )
+        
+        if token:
+            token_file = os.path.join(os.path.dirname(__file__), '..', 'yandex_token.txt')
+            with open(token_file, 'w') as f:
+                f.write(token.strip())
+            messagebox.showinfo("Успех", "Токен сохранён. Перезапустите приложение.")
+            self.root.destroy()
             
     def update_path_display(self):
         """Обновляет отображение текущего пути"""
