@@ -6,7 +6,7 @@ from django.utils import timezone
 class User(AbstractUser):
     """Расширенная модель пользователя с ролями"""
 
-    ROLE_CHOISES = [
+    ROLE_CHOICES = [
         ('admin', 'Администратор'),
         ('manager', 'Менеджер'),
         ('viewer', 'Наблюдатель'),
@@ -14,7 +14,7 @@ class User(AbstractUser):
 
     role = models.CharField(
         max_length=20,
-        choices=ROLE_CHOISES,
+        choices=ROLE_CHOICES,
         default='viewer',
         verbose_name='Роль'
     )

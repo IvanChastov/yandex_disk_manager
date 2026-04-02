@@ -50,3 +50,5 @@ dist/
 build/
 *.spec
 *.exe
+
+yandex_token.txt

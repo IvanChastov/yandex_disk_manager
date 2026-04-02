@@ -24,13 +24,14 @@ django.setup()
 from core.yandex.client import YandexDiskClient
 from core.yandex.storage import get_current_user, get_token_for_user
 from core.yandex.monitor import DiskMonitor
-from core.models import File, ChangeLog, Tag
+from core.models import File, ChangeLog, Tag, User
 from core.permissions import has_permission
 from gui.auth_dialog import AuthDialog
 from gui.widgets.file_list import FileListWidget
 from gui.widgets.tag_panel import TagPanel
 from gui.widgets.notifications import NotificationsWidget
 from gui.tag_assign_dialog import TagAssignDialog
+from gui.login_dialog import LoginDialog
 
 
 class MainWindow:
@@ -68,8 +69,8 @@ class MainWindow:
 
         self.bind_hotkeys()
 
-        # Загружаем данные
-        self.load_user()
+        # Показываем окно входа
+        self.show_login()
 
         # История навигации (стек)
         self.navigation_history = []
@@ -311,6 +312,111 @@ class MainWindow:
 
         if token:
             self.init_client(token)
+
+    def show_login(self):
+        """Показывает окно входа"""
+        from gui.login_dialog import LoginDialog
+        
+        dialog = LoginDialog(self.root)
+        self.current_user = dialog.run()
+        
+        if not self.current_user:
+            self.root.destroy()
+            return
+        
+        role_display = {
+            'admin': 'Администратор',
+            'manager': 'Менеджер',
+            'viewer': 'Наблюдатель',
+        }.get(self.current_user.role, self.current_user.role)
+        
+        self.status_var.set(f"Пользователь: {self.current_user.username} ({role_display})")
+        
+        # Отладка
+        print(f"DEBUG: Роль пользователя: {self.current_user.role}")
+        
+        # Загружаем корпоративный токен
+        self.load_corporate_token()
+        
+        # Обновляем меню в зависимости от роли
+        self.update_menu_for_role()
+
+    def load_corporate_token(self):
+        """Загружает корпоративный токен из файла"""
+        import os
+        
+        token_file = os.path.join(os.path.dirname(__file__), '..', 'yandex_token.txt')
+        print(f"DEBUG: Ищем файл токена: {token_file}")
+        print(f"DEBUG: Файл существует: {os.path.exists(token_file)}")
+        
+        if os.path.exists(token_file):
+            with open(token_file, 'r') as f:
+                token = f.read().strip()
+            if token:
+                print("DEBUG: Токен найден, инициализируем клиент")
+                self.init_client_with_token(token)
+                return
+        
+        # Если токена нет, предлагаем администратору его ввести
+        print(f"DEBUG: Роль для ввода токена: {self.current_user.role}")
+        if self.current_user.role == 'admin':
+            print("DEBUG: Вызываем setup_corporate_token")
+            self.setup_corporate_token()
+        else:
+            self.status_var.set("Корпоративный токен не настроен. Обратитесь к администратору")
+
+    def setup_corporate_token(self):
+        """Настройка корпоративного токена (только для администратора)"""
+        token = simpledialog.askstring(
+            "Настройка корпоративного токена",
+            "Введите токен для доступа к корпоративному Яндекс.Диску:\n\n"
+            "Как получить токен:\n"
+            "1. Перейдите на https://oauth.yandex.ru/\n"
+            "2. Создайте приложение\n"
+            "3. Получите токен через авторизацию\n\n"
+            "Токен будет сохранён в файл yandex_token.txt",
+            parent=self.root,
+            show="*"
+        )
+
+        if token:
+            token_file = os.path.join(os.path.dirname(__file__),
+                                      '..',
+                                      'yandex_token.txt'
+                                      )
+            with open(token_file, 'w') as f:
+                f.write(token.strip())
+            messagebox.showinfo("Успех",
+                                "Токен сохранён. Перезапустите приложение"
+                                )
+            self.root.destroy() # Закрываем приложение для перезапуска
+
+    def init_client_with_token(self, token):
+        """Инициализирует клиент с переданным токеном"""
+        try:
+            self.client = YandexDiskClient(token=token)
+            self.status_var.set("Подключено к корпоративному Яндекс.Диску")
+            self.connection_var.set("Подключено")
+            self.refresh_files()
+            self.start_monitor()
+        except Exception as e:
+            self.status_var.set(f"Ошибка подключения: {e}")
+            self.connection_var.set("Ошибка")
+
+    def update_menu_for_role(self):
+        """Обновляет меню в зависимости от роли пользователя"""
+        if not self.current_user:
+            return
+        
+        role = self.current_user.role
+
+        # Парва доступа
+        self.user_can_upload = role in ['admin', 'manager']
+        self.user_can_delete = role == 'admin'
+        self.user_can_manage_tags = role in ['admin', 'manager']
+
+        # Обновляем состояние пунктов меню
+        self.update_menu_permissions()
 
     def start_monitor(self):
         """Запускает фоновый мониторинг"""
