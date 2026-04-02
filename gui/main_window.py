@@ -129,10 +129,6 @@ class MainWindow:
         menubar.add_cascade(label="Помощь", menu=help_menu)
 
         self.root.config(menu=menubar)
-        
-        # Применяем права после создания меню (если права уже определены)
-        if hasattr(self, 'user_can_upload'):
-            self.update_menu_permissions()
 
     def update_menu_permissions(self):
         """Обновляет состояние пунктов меню в зависимости от прав"""
@@ -403,6 +399,23 @@ class MainWindow:
             self.status_var.set(f"Ошибка подключения: {e}")
             self.connection_var.set("Ошибка")
 
+    def add_admin_menu(self):
+        """Добавляет меню администратора (вызывается после входа)"""
+        if self.current_user and self.current_user.role == 'admin':
+            menubar = self.root.nametowidget(self.root.cget('menu'))
+            
+            # Проверяем, есть ли уже меню "Админ"
+            for i in range(menubar.index('end') + 1):
+                try:
+                    if menubar.entrycget(i, 'label') == 'Админ':
+                        return
+                except:
+                    pass
+            
+            admin_menu = tk.Menu(menubar, tearoff=0)
+            admin_menu.add_command(label="Управление пользователями", command=self.show_admin_panel)
+            menubar.add_cascade(label="Админ", menu=admin_menu)
+
     def update_menu_for_role(self):
         """Обновляет меню в зависимости от роли пользователя"""
         if not self.current_user:
@@ -410,13 +423,21 @@ class MainWindow:
         
         role = self.current_user.role
 
-        # Парва доступа
+        # Права доступа
         self.user_can_upload = role in ['admin', 'manager']
         self.user_can_delete = role == 'admin'
         self.user_can_manage_tags = role in ['admin', 'manager']
 
         # Обновляем состояние пунктов меню
         self.update_menu_permissions()
+        
+        # Добавляем меню администратора
+        self.add_admin_menu()
+
+    def show_admin_panel(self):
+        """Показывает панель администратора"""
+        from gui.admin_dialog import AdminDialog
+        AdminDialog(self.root)
 
     def start_monitor(self):
         """Запускает фоновый мониторинг"""
@@ -424,8 +445,10 @@ class MainWindow:
             self.monitor.stop()
 
         try:
+            # Используем имя текущего пользователя для мониторинга
+            username = self.current_user.username if self.current_user else None
             self.monitor = DiskMonitor(
-                username=self.current_user,
+                username=username,
                 check_interval=300,
                 on_change_callback=self.on_monitor_change
             )
