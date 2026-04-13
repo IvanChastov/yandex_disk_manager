@@ -48,6 +48,9 @@ class MainWindow:
         self.root.geometry("1300x750")
         self.root.minsize(900, 600)
         
+        # Настраиваем закрытие ДО всего остального
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
         # Настраиваем стили
         self.setup_styles()
         
@@ -71,6 +74,11 @@ class MainWindow:
 
         # Показываем окно входа
         self.show_login()
+        
+        # Если пользователь не вошёл (окно закрыто), выходим
+        if not self.current_user:
+            self.root.destroy()
+            return
 
         # История навигации (стек)
         self.navigation_history = []
@@ -80,9 +88,6 @@ class MainWindow:
         saved_settings = self.load_settings_from_file()
         if saved_settings:
             self.apply_settings(saved_settings)
-
-        # Настраиваем закрытие
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
     
     def setup_styles(self):
         """Настраивает стили для всего приложения"""
@@ -106,7 +111,7 @@ class MainWindow:
         file_menu.add_command(label="Выход", command=self.on_closing, accelerator="Ctrl+Q")
         menubar.add_cascade(label="Файл", menu=file_menu)
 
-        # Меню "Диск" — сохраняем ссылку для обновления прав
+        # Меню "Диск"
         self.disk_menu = tk.Menu(menubar, tearoff=0)
         self.disk_menu.add_command(label="Обновить", command=self.refresh_files, accelerator="F5")
         self.disk_menu.add_command(label="Загрузить файл", command=self.upload_file)
@@ -125,6 +130,13 @@ class MainWindow:
         help_menu.add_command(label="О программе", command=self.show_about)
         help_menu.add_command(label="Горячие клавиши", command=self.show_shortcuts)
         menubar.add_cascade(label="Помощь", menu=help_menu)
+
+        # Меню "Админ" (всегда добавляем)
+        admin_menu = tk.Menu(menubar, tearoff=0)
+        admin_menu.add_command(label="Управление пользователями", command=self.show_admin_panel)
+        admin_menu.add_separator()
+        admin_menu.add_command(label="Сменить токен", command=self.change_token)
+        menubar.add_cascade(label="Админ", menu=admin_menu)
 
         self.root.config(menu=menubar)
 
@@ -258,7 +270,6 @@ class MainWindow:
         self.current_user = dialog.run()
         
         if not self.current_user:
-            self.root.destroy()
             return
         
         role_display = {
@@ -269,38 +280,42 @@ class MainWindow:
         
         self.status_var.set(f"Пользователь: {self.current_user.username} ({role_display})")
         
-        # Отладка
-        print(f"DEBUG: Роль пользователя: {self.current_user.role}")
+        # Обновляем меню в зависимости от роли
+        self.update_menu_for_role()
         
         # Загружаем корпоративный токен
         self.load_corporate_token()
-        
-        # Обновляем меню в зависимости от роли
-        self.update_menu_for_role()
 
     def load_corporate_token(self):
-        """Загружает корпоративный токен из файла"""
+        """Загружает корпоративный токен из файла рядом с EXE"""
         import os
+        import sys
         
-        token_file = os.path.join(os.path.dirname(__file__), '..', 'yandex_token.txt')
-        print(f"DEBUG: Ищем файл токена: {token_file}")
-        print(f"DEBUG: Файл существует: {os.path.exists(token_file)}")
+        # Для EXE — путь к папке с EXE
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        token_file = os.path.join(base_dir, 'yandex_token.txt')
+        
+        print(f"DEBUG: Ищем токен в: {token_file}")
         
         if os.path.exists(token_file):
             with open(token_file, 'r') as f:
                 token = f.read().strip()
             if token:
-                print("DEBUG: Токен найден, инициализируем клиент")
                 self.init_client_with_token(token)
-                return
+                return True
         
         # Если токена нет, предлагаем администратору его ввести
-        print(f"DEBUG: Роль для ввода токена: {self.current_user.role}")
-        if self.current_user.role == 'admin':
-            print("DEBUG: Вызываем setup_corporate_token")
+        if self.current_user and self.current_user.role == 'admin':
             self.setup_corporate_token()
         else:
             self.status_var.set("Корпоративный токен не настроен. Обратитесь к администратору")
+            self.connection_var.set("Не подключено")
+        
+        return False
 
     def setup_corporate_token(self):
         """Настройка корпоративного токена (только для администратора)"""
@@ -336,28 +351,11 @@ class MainWindow:
             self.connection_var.set("Подключено")
             self.refresh_files()
             self.start_monitor()
+            return True
         except Exception as e:
             self.status_var.set(f"Ошибка подключения: {e}")
             self.connection_var.set("Ошибка")
-
-    def add_admin_menu(self):
-        """Добавляет меню администратора (вызывается после входа)"""
-        if self.current_user and self.current_user.role == 'admin':
-            menubar = self.root.nametowidget(self.root.cget('menu'))
-            
-            # Проверяем, есть ли уже меню "Админ"
-            for i in range(menubar.index('end') + 1):
-                try:
-                    if menubar.entrycget(i, 'label') == 'Админ':
-                        return
-                except:
-                    pass
-            
-            admin_menu = tk.Menu(menubar, tearoff=0)
-            admin_menu.add_command(label="Управление пользователями", command=self.show_admin_panel)
-            admin_menu.add_separator()
-            admin_menu.add_command(label="Сменить токен", command=self.change_token)
-            menubar.add_cascade(label="Админ", menu=admin_menu)
+            return False
 
     def update_menu_for_role(self):
         """Обновляет меню в зависимости от роли пользователя"""
@@ -373,14 +371,14 @@ class MainWindow:
 
         # Обновляем состояние пунктов меню
         self.update_menu_permissions()
-        
-        # Добавляем меню администратора
-        self.add_admin_menu()
 
     def show_admin_panel(self):
         """Показывает панель администратора"""
-        from gui.admin_dialog import AdminDialog
-        AdminDialog(self.root)
+        if self.current_user and self.current_user.role == 'admin':
+            from gui.admin_dialog import AdminDialog
+            AdminDialog(self.root)
+        else:
+            messagebox.showerror("Ошибка", "У вас нет прав для доступа к админ-панели")
 
     def start_monitor(self):
         """Запускает фоновый мониторинг"""
@@ -617,6 +615,10 @@ class MainWindow:
 
     def change_token(self):
         """Смена корпоративного токена (только для администратора)"""
+        if not (self.current_user and self.current_user.role == 'admin'):
+            messagebox.showerror("Ошибка", "У вас нет прав для смены токена")
+            return
+        
         from tkinter import simpledialog, messagebox
         import os
         
