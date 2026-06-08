@@ -4,9 +4,15 @@ import sys
 import os
 
 # Добавляем путь к проекту
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )
+    )
+)
 
-# Настраиваем django
+# Настраиваем Django
 import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
@@ -20,7 +26,7 @@ class TagPanel(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
-        self.main_window = None  # Инициализируем main_window
+        self.main_window = None
 
         self.create_widgets()
         self.load_tags()
@@ -31,9 +37,9 @@ class TagPanel(ttk.Frame):
         title_frame = ttk.Frame(self)
         title_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(title_frame, text="Теги", font=('Arial', 10, 'bold')).pack(
-            side=tk.LEFT
-            )
+        ttk.Label(
+            title_frame, text="Теги", font=('Arial', 10, 'bold')
+        ).pack(side=tk.LEFT)
 
         # Кнопка добавления тега
         add_button = ttk.Button(
@@ -84,12 +90,12 @@ class TagPanel(ttk.Frame):
         if Tag.objects.filter(name=name).exists():
             messagebox.showwarning(
                 "Предупреждение", f"Тег '{name}' уже существует"
-                )
+            )
             return
 
         # Создаём тег
         try:
-            tag = Tag.objects.create(name=name)
+            Tag.objects.create(name=name)
             self.load_tags()
             messagebox.showinfo("Успех", f"Тег '{name}' создан")
         except Exception as e:
@@ -99,19 +105,16 @@ class TagPanel(ttk.Frame):
         """Удаляет тег и снимает его со всех файлов"""
         try:
             tag = Tag.objects.get(name=tag_name)
-            
-            # Снимаем тег со всех файлов (исправлено)
+
             files_with_tag = tag.files.all()
             count = files_with_tag.count()
-            
+
             if count > 0:
-                # Если тег был у файлов, спрашиваем подтверждение
                 if messagebox.askyesno(
                     "Подтверждение",
                     f"Тег '{tag_name}' используется в {count} файлах.\n"
                     f"Удалить тег и снять его со всех файлов?"
                 ):
-                    # Удаляем тег из каждого файла (исправлено)
                     for file_obj in files_with_tag:
                         file_obj.tags.remove(tag)
                     tag.delete()
@@ -121,12 +124,10 @@ class TagPanel(ttk.Frame):
             else:
                 tag.delete()
                 messagebox.showinfo("Успех", f"Тег '{tag_name}' удалён")
-            
+
             self.load_tags()
-            
-            # Обновляем отображение файлов в главном окне
             self.update_file_list_tags()
-            
+
         except Tag.DoesNotExist:
             messagebox.showerror("Ошибка", f"Тег '{tag_name}' не найден")
 
@@ -151,10 +152,8 @@ class TagPanel(ttk.Frame):
     def on_search(self, event):
         """Поиск тегов"""
         query = self.search_entry.get().lower()
-
         self.tag_listbox.delete(0, tk.END)
 
-        # Исправлено: name__icontains (два подчёркивания)
         tags = Tag.objects.filter(name__icontains=query).order_by('name')
         for tag in tags:
             self.tag_listbox.insert(tk.END, tag.name)
@@ -167,7 +166,7 @@ class TagPanel(ttk.Frame):
         return None
 
     def set_main_window(self, main_window):
-        """Устанавливает ссылку на главное окно для обновления списка файлов"""
+        """Устанавливает ссылку на главное окно"""
         self.main_window = main_window
 
     def update_file_list_tags(self):

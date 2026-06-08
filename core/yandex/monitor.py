@@ -1,6 +1,7 @@
-import time
 import threading
+import time
 from datetime import datetime, timedelta
+
 from django.utils import timezone
 
 from core.models import File, ChangeLog
@@ -9,14 +10,20 @@ from core.yandex.storage import get_current_user
 
 
 class DiskMonitor:
-    def __init__(self, username=None, check_interval=300, on_change_callback=None, corporate_token=None):
+    def __init__(
+        self,
+        username=None,
+        check_interval=300,
+        on_change_callback=None,
+        corporate_token=None
+    ):
         self.username = username
         self.check_interval = check_interval
         self.running = False
         self.thread = None
         self.client = None
         self.on_change_callback = on_change_callback
-        self.corporate_token = corporate_token  # Добавляем возможность передать токен напрямую
+        self.corporate_token = corporate_token
 
         # Если передан токен, не требуем username
         if not self.corporate_token and not self.username:
@@ -31,7 +38,8 @@ class DiskMonitor:
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
-        print(f"Мониторинг запущен для пользователя {self.username or 'корпоративный'}")
+        user_info = self.username or "корпоративный"
+        print(f"Мониторинг запущен для пользователя {user_info}")
 
     def stop(self):
         self.running = False
@@ -41,7 +49,6 @@ class DiskMonitor:
 
     def _run(self):
         try:
-            # Если есть корпоративный токен, используем его
             if self.corporate_token:
                 self.client = YandexDiskClient(token=self.corporate_token)
             else:
@@ -57,14 +64,14 @@ class DiskMonitor:
                 self._check_changes()
             except Exception as e:
                 print(f"Ошибка при проверке изменений: {e}")
-            
+
             for _ in range(self.check_interval):
                 if not self.running:
                     break
                 time.sleep(1)
 
     def _check_changes(self):
-        print(f"\n Проверка изменений в {datetime.now().strftime('%H:%M:%S')}")
+        print(f"\nПроверка изменений в {datetime.now().strftime('%H:%M:%S')}")
 
         all_files = self._get_all_files('/')
         db_files = {f.yandex_id: f for f in File.objects.all()}
@@ -72,7 +79,9 @@ class DiskMonitor:
 
         for file_info in all_files:
             if file_info.resource_id in db_files:
-                if self._check_modified_file(file_info, db_files[file_info.resource_id]):
+                if self._check_modified_file(
+                    file_info, db_files[file_info.resource_id]
+                ):
                     changes_detected = True
                 del db_files[file_info.resource_id]
             else:
@@ -95,7 +104,9 @@ class DiskMonitor:
             for item in files:
                 items.append(item)
                 if item.type == 'dir' and current_depth < max_depth:
-                    items.extend(self._get_all_files(item.path, max_depth, current_depth + 1))
+                    items.extend(self._get_all_files(
+                        item.path, max_depth, current_depth + 1
+                    ))
         except Exception as e:
             print(f"Ошибка получения списка {path}: {e}")
         return items
@@ -111,7 +122,10 @@ class DiskMonitor:
             ).exists()
 
             if recent_app_change:
-                print(f"Пропускаем {file_info.name} (недавнее изменение от приложения)")
+                print(
+                    f"Пропускаем {file_info.name} "
+                    "(недавнее изменение от приложения)"
+                )
                 db_file.modified_at = api_modified
                 db_file.save()
                 return False
@@ -147,7 +161,10 @@ class DiskMonitor:
         ).exists()
 
         if recent_app_change:
-            print(f"Пропускаем {file_info.name} (недавнее создание от приложения)")
+            print(
+                f"Пропускаем {file_info.name} "
+                "(недавнее создание от приложения)"
+            )
             return
 
         print(f"Новый файл (напрямую): {file_info.name}")
@@ -183,7 +200,10 @@ class DiskMonitor:
         ).exists()
 
         if recent_app_change:
-            print(f"Пропускаем удаление {db_file.name} (недавнее удаление от приложения)")
+            print(
+                f"Пропускаем удаление {db_file.name} "
+                "(недавнее удаление от приложения)"
+            )
             db_file.delete()
             return
 

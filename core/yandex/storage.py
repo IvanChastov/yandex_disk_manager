@@ -3,12 +3,14 @@ from core.models import User
 
 def save_token_to_user(username, token):
     """
-    Сохраняет токен для указанного пользователя
+    Сохраняет токен для указанного пользователя.
+
     Args:
         username (str): Имя пользователя в системе
         token (str): Токен доступа к Яндекс.Диску
+
     Returns:
-        bool: True, если успешно, False, если пользователь не найден
+        bool: True если успешно, False если пользователь не найден
     """
     try:
         user = User.objects.get(username=username)
@@ -23,9 +25,11 @@ def save_token_to_user(username, token):
 
 def get_token_for_user(username):
     """
-    Получает токен для указанного пользователя
+    Получает токен для указанного пользователя.
+
     Args:
         username (str): Имя пользователя в системе
+
     Returns:
         str: Токен или None, если не найден
     """
@@ -46,13 +50,13 @@ def get_token_for_user(username):
 def get_current_user():
     """
     Получает текущего пользователя.
+
     Пока берёт первого активного пользователя из БД.
 
     Returns:
         str: Имя пользователя или None
     """
     try:
-        # Пробуем получить первого активного пользователя (не суперадмина)
         user = User.objects.filter(is_active=True).first()
         if user:
             print(f"Текущий пользователь: {user.username}")

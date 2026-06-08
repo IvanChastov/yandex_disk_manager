@@ -7,7 +7,8 @@ def has_permission(username, action):
 
     Args:
         username (str): Имя пользователя
-        action (str): Действие ('view', 'upload', 'delete', 'manage_tags', 'manage_users')
+        action (str): Действие 
+            ('view', 'upload', 'delete', 'manage_tags', 'manage_users')
 
     Returns:
         bool: True если разрешено, False если нет
